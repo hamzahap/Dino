@@ -1,6 +1,7 @@
 import pygame
 import numpy as np
 import sys
+import os
 import tensorflow as tf
 import random
 
@@ -15,7 +16,7 @@ pygame.display.set_caption("Dino Game")
 # Set up game variables
 GROUND_HEIGHT = 350
 dino = pygame.Rect(50, GROUND_HEIGHT - 40, 40, 40)
-obstacles = [(i * 200 + 400, GROUND_HEIGHT - 60) for i in range(100)] # List of obstacle positions
+obstacles = [(i * 300 + 600, GROUND_HEIGHT - 60) for i in range(10)] # List of obstacle positions
 obstacle_speed = 5
 score = 0
 
@@ -34,15 +35,19 @@ MEMORY_CAPACITY = 10000
 EPSILON_START = 1.0
 EPSILON_END = 0.01
 EPSILON_DECAY = 0.001
-STATE_SIZE = 11 # Number of features in the state
+STATE_SIZE = 14 # Number of features in the state
 ACTION_SIZE = 2
+# Load the saved model
 model = tf.keras.Sequential([
     tf.keras.layers.Dense(32, input_dim=STATE_SIZE, activation='relu'),
     tf.keras.layers.Dense(32, activation='relu'),
     tf.keras.layers.Dense(ACTION_SIZE, activation=None)
 ])
 model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE), loss='mse')
-memory = []
+model.load_weights('model.h5')
+
+
+#memory = []
 
 # Helper function to preprocess the state
 def preprocess_state(dino, obstacles):
@@ -70,6 +75,8 @@ def select_action(state, epsilon):
 
 # Helper function to add a transition to memory
 def add_to_memory(state, action, reward, next_state, done):
+    if 'memory' not in globals():
+        globals()['memory'] = []
     memory.append((state, action, reward, next_state, done))
     if len(memory) > MEMORY_CAPACITY:
         memory.pop(0)
@@ -89,16 +96,16 @@ def sample_minibatch():
         targets.append(target_vec)
     return np.array(states), np.array(targets)
 
-# Set up game loop
+# Set the game loop
 clock = pygame.time.Clock()
 running = True
 epsilon = EPSILON_START
+jump_counter = 0
 while running:
     # Handle events
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-            pygame.quit()
-            sys.exit()
+            running = False
     # Preprocess the current state
     state = preprocess_state(dino, obstacles)
 
@@ -106,9 +113,18 @@ while running:
     action = select_action(state, epsilon)
 
     # Take the action and observe the next state and reward
-    if action == 1 and dino.y == GROUND_HEIGHT - 40:
+    if action == 1 and jump_counter == 0:
+        jump_counter = 1
         dino.y -= 100
-        dino.y -= 150
+    elif jump_counter > 0 and jump_counter < 20:
+        jump_counter += 1
+        dino.y -= 15
+    elif jump_counter >= 20 and jump_counter < 40:
+        jump_counter += 1
+        dino.y += 15
+    elif jump_counter >= 40:
+        jump_counter = 0
+        dino.y = GROUND_HEIGHT - 40
     new_state = preprocess_state(dino, obstacles)
     if obstacles[0][0] - dino.x < 40:
         reward = -10
@@ -139,7 +155,7 @@ while running:
     for i in range(len(obstacles)):
         obstacles[i] = (obstacles[i][0] - obstacle_speed, obstacles[i][1])
         if obstacles[i][0] < -40:
-            obstacles[i] = (obstacles[(i - 1) % len(obstacles)][0] + 200, GROUND_HEIGHT - 60)
+            obstacles[i] = (obstacles[(i - 1) % len(obstacles)][0] + np.random.randint(200, 400), GROUND_HEIGHT - 60)
         if dino.colliderect(pygame.Rect(obstacles[i][0], obstacles[i][1], 40, 60)):
             text = FONT.render("Game Over", True, BLACK)
             WINDOW.blit(text, (WINDOW_WIDTH // 2 - text.get_width() // 2, WINDOW_HEIGHT // 2 - text.get_height() // 2))
@@ -155,6 +171,8 @@ while running:
     # Increment the score if the dino has passed an obstacle
     if obstacles[0][0] - dino.x < 0:
         score += 1
+        del obstacles[0]
+        obstacles.append((obstacles[-1][0] + np.random.randint(200, 400), GROUND_HEIGHT - 60))
 
     # Draw the game window
     WINDOW.fill(WHITE)
@@ -178,3 +196,4 @@ while running:
 
 model.save_weights('model.h5')
 pygame.quit()
+os.execv(sys.executable, [sys.executable] + sys.argv)
