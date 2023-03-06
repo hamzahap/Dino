@@ -1,5 +1,6 @@
 import pygame
 import random
+import numpy as np
 
 pygame.init()
 
@@ -16,6 +17,20 @@ obstacles = []
 obstacle_speed = 5
 obstacle_height_scale = 1
 score = 0
+
+# Define state space
+dino_y_bins = np.linspace(0, GROUND_HEIGHT - 40, 10)
+dino_velocity_bins = np.linspace(-10, 10, 5)
+obstacle_x_bins = np.linspace(WINDOW_WIDTH, 0, 10)
+obstacle_height_bins = np.linspace(20, 60, 3)
+state_space = np.array([(dino_y, dino_velocity, obstacle_x, obstacle_height)
+                        for dino_y in dino_y_bins
+                        for dino_velocity in dino_velocity_bins
+                        for obstacle_x in obstacle_x_bins
+                        for obstacle_height in obstacle_height_bins])
+
+# Define action space
+action_space = np.array([0, 1])
 
 # Set up fonts
 FONT = pygame.font.SysFont(None, 48)
