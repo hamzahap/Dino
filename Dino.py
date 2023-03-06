@@ -32,8 +32,8 @@ BLACK = (0, 0, 0)
 # Set up Q-learning parameters
 GAMMA = 0.9
 LEARNING_RATE = 0.1
-EPSILON = 0.1
-Q_TABLE = np.zeros((3, 2))
+EPSILON = 0.9
+#Q_TABLE = np.zeros((3, 2))
 
 # Helper function to discretize the state
 def discretize_state(dino, obstacles):
@@ -51,7 +51,7 @@ def discretize_state(dino, obstacles):
     return state
 
 # Save the Q-table to a file at the end of the game
-np.savetxt('qtable.txt', Q_TABLE)
+#np.savetxt('qtable.txt', Q_TABLE)
 
 # Load the Q-table from the file at the beginning of the next game
 Q_TABLE = np.loadtxt('qtable.txt')
@@ -104,40 +104,11 @@ while running:
         obstacle.x -= 5
         obstacle.x -= obstacle_speed
         if dino.colliderect(obstacle):
-            # Update the Q-table with the final reward
-            Q_TABLE[state][action] = (1 - LEARNING_RATE) * Q_TABLE[state][action] + \
-                LEARNING_RATE * (reward + GAMMA * np.max(Q_TABLE[new_state]))
-
-            # Reset the game variables
-            dino = pygame.Rect(50, GROUND_HEIGHT - 40, 40, 40)
-            obstacles = []
-            obstacle_speed = 5
-            obstacle_height_scale = 1
-            score = 0
-
-            # Set the initial state and action
-            state = discretize_state(dino, obstacles)
-            if random.random() < EPSILON:
-                action = random.randint(0, 1)
-            else:
-                action = np.argmax(Q_TABLE[state])
-
-            # Draw the game window
-            WINDOW.fill(WHITE)
-            pygame.draw.rect(WINDOW, BLACK, pygame.Rect(0, GROUND_HEIGHT, WINDOW_WIDTH, WINDOW_HEIGHT - GROUND_HEIGHT))
-            pygame.draw.rect(WINDOW, (255, 0, 0), dino)
-            for obstacle in obstacles:
-                pygame.draw.rect(WINDOW, (0, 0, 255), obstacle)
-            score_text = FONT.render("Score: " + str(score), True, BLACK)
-            WINDOW.blit(score_text, (10, 10))
+            text = FONT.render("Game Over", True, BLACK)
+            WINDOW.blit(text, (WINDOW_WIDTH // 2 - text.get_width() // 2, WINDOW_HEIGHT // 2 - text.get_height() // 2))
             pygame.display.flip()
-
-            # Wait for 2 seconds before resuming the game
             pygame.time.wait(2000)
-
-            # Set the game clock
-            clock.tick(60)
-
+            running = False
         elif obstacle.right < 0:
             obstacles.remove(obstacle)
             score += 1
