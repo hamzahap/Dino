@@ -4,11 +4,10 @@ import sys
 import random
 import time
 
+
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.optimizers import Adam
-
-
 
 # Set up the game parameters
 WINDOW_WIDTH = 600
@@ -34,6 +33,8 @@ NUM_ACTIONS = 2
 STATE_SIZE = 4
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
+EPISODES = 1000
+NUM_EPISODES = 100
 
 
 # Initialize pygame
@@ -102,9 +103,9 @@ def remove_offscreen_obstacles(obstacles):
     obstacles[:] = [obstacle for obstacle in obstacles if obstacle.x + obstacle.width > 0]
 
 # Function to draw score to the screen
-def draw_score(score):
+def draw_score(score, episode, epsilon, time):
     font = pygame.font.Font(None, 36)
-    text = font.render("Score: " + str(score), True, BLACK)
+    text = font.render("Score: " + str(score) + " Episode: " + str(episode) + " Epsilon: " + str(round(epsilon, 2)) + " Time: " + str(round(time, 2)), True, BLACK)
     text_rect = text.get_rect()
     text_rect.centerx = WINDOW_WIDTH // 2
     text_rect.centery = 20
@@ -123,7 +124,9 @@ def choose_action(model, state, epsilon):
     if np.random.random() < epsilon:
         return np.random.choice(NUM_ACTIONS)
     else:
-        return np.argmax(model.predict(np.expand_dims(state, axis=0)))
+        q_values = model.predict(np.expand_dims(state, axis=0))
+        return np.argmax(q_values[0])
+
 
 # Update the Q-learning model using the SARSA algorithm
 def replay(memory, model, batch_size, discount_factor, learning_rate):
@@ -147,90 +150,134 @@ def train(model, memory, batch_size, discount_factor, learning_rate, epsilon, ep
     state = np.array([dino.y, (dino.y - dino.velocity) / 10, obstacles[0].x, obstacles[0].height])
     total_reward = 0
     done = False
-    while not done:
-        action = choose_action(model, state, epsilon)
-        dino.jump() if action == 1 else None
-        dino.update()
-        update_obstacles(obstacles, OBSTACLE_SPEED)
-        remove_offscreen_obstacles(obstacles)
-        if len(obstacles) == 0:
+    score_list = []
+    time_list = []
+    for episode in range(EPISODES):
+        while not done:
+            action = choose_action(model, state, epsilon)
+            dino.jump() if action == 1 else None
+            dino.update()
+            update_obstacles(obstacles, OBSTACLE_SPEED)
+            remove_offscreen_obstacles(obstacles)
+            if len(obstacles) == 0:
+                spawn_obstacle(obstacles)
+            if check_collisions(dino, obstacles):
+                reward = -10
+                done = True
+            else:
+                reward = 1
+            next_state = np.array([dino.y, (dino.y - dino.velocity) / 10, obstacles[0].x, obstacles[0].height]) if len(obstacles) > 0 else state
+            memory.append((state, action, reward, next_state))
+            replay(memory, model, batch_size, discount_factor, learning_rate)
+            state = next_state
+            total_reward += reward
+        epsilon = max(epsilon * EPSILON_DECAY, EPSILON_MIN)
+        score_list.append(total_reward)
+        time_list.append(pygame.time.get_ticks() / 1000)
+        if episode % 10 == 0:
+            avg_score = sum(score_list) / len(score_list)
+            avg_time = sum(time_list) / len(time_list)
+            print("Episode:", episode, "  Memory size:", len(memory), "  Epsilon:", round(epsilon, 2), "  Average score:", round(avg_score, 2), "  Average time:", round(avg_time, 2))
+            score_list = []
+            time_list = []
+        total_reward = 0
+        done = False
+        obstacles.clear()
+        spawn_obstacle(obstacles)
+        dino.x, dino.y = 50, 100
+        state = np.array([dino.y, (dino.y - dino.velocity) / 10, obstacles[0].x, obstacles[0].height])
+        draw_window(dino, obstacles, 0, episode, epsilon, 0)
+        for i in range(3):
             spawn_obstacle(obstacles)
-        if check_collisions(dino, obstacles):
-            reward = -10
-            done = True
-        else:
-            reward = 1
-        next_state = np.array([dino.y, (dino.y - dino.velocity) / 10, obstacles[0].x, obstacles[0].height]) if len(obstacles) > 0 else state
-        memory.append((state, action, reward, next_state))
-        replay(memory, model, batch_size, discount_factor, learning_rate)
-        state = next_state
-        total_reward += reward
-        if epsilon > epsilon_min:
-            epsilon *= epsilon_decay
+        pygame.event.pump()
+
+
     return total_reward
 
-# Create the SARSA model using a deep neural network
-def create_model():
-    model = Sequential()
-    model.add(Dense(64, input_shape=(STATE_SIZE,), activation="relu"))
-    model.add(Dense(64, activation="relu"))
-    model.add(Dense(NUM_ACTIONS, activation="linear"))
-    model.compile(loss="mse", optimizer=Adam(learning_rate=LEARNING_RATE))
-    return model
-
-
-# Main game loop
-def run_game():
-    # Set up the Q-learning model
-    model = create_model()
-    memory = []
-    epsilon = INITIAL_EPSILON
-    total_reward = 0
-    episode = 0
-    obstacles = []
-
-    while True:
-        # Spawn a new obstacle if there are no obstacles
-        if len(obstacles) == 0:
-            spawn_obstacle(obstacles)
-
-        # Set up the game
+# Run the game
+def run_game(model):
+    for episode in range(NUM_EPISODES):
+        obstacles = []
+        memory = []
         global dino
         dino = Dino(50, GROUND_HEIGHT)
+        epsilon = max(EPSILON_MIN, INITIAL_EPSILON * EPSILON_DECAY ** episode)
+        score = 0
+        start_time = time.time()
+        state = None  # Initialize state variable to None
 
-        # Run the game
-        episode += 1
-        reward = train(model, memory, BATCH_SIZE, DISCOUNT_FACTOR, LEARNING_RATE, epsilon, EPSILON_MIN, EPSILON_DECAY, obstacles)
-        total_reward += reward
+        while True:
+            if len(obstacles) == 0:
+                spawn_obstacle(obstacles)
+                state = np.array([dino.y, (dino.y - dino.velocity) / 10, obstacles[0].x, obstacles[0].height])
 
-        # Update the obstacles
-        for obstacle in obstacles:
-            obstacle.move()
-            if obstacle.off_screen():
-                obstacles.remove(obstacle)
+            # Handle events
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
 
-        # Draw the game window
-        WINDOW.fill(WHITE)
-        pygame.draw.rect(WINDOW, BLACK, (0, GROUND_HEIGHT, WINDOW_WIDTH, WINDOW_HEIGHT - GROUND_HEIGHT))
-        dino.draw(WINDOW)
-        for obstacle in obstacles:
-            obstacle.draw(WINDOW)
-        draw_score(total_reward, episode, epsilon)
-        pygame.display.update()
+            # Choose an action and update the game state
+            action = choose_action(model, state, epsilon)
+            dino.jump() if action == 1 else None
+            dino.update()
+            update_obstacles(obstacles, OBSTACLE_SPEED)
+            remove_offscreen_obstacles(obstacles)
+            if len(obstacles) == 0:
+                spawn_obstacle(obstacles)
+            if check_collisions(dino, obstacles):
+                reward = -10
+                done = True
+            else:
+                reward = 1
+                done = False
+            next_state = np.array([dino.y, (dino.y - dino.velocity) / 10, obstacles[0].x, obstacles[0].height]) if len(obstacles) > 0 else state
+            memory.append((state, action, reward, next_state))
+            state = next_state
+            score += reward
 
-        # Check for collisions
-        if check_collisions(dino, obstacles):
-            epsilon = INITIAL_EPSILON
-            total_reward = 0
-            episode = 0
-            obstacles = []
-            dino.draw_death(WINDOW)
+            # Update the model
+            replay(memory, model, BATCH_SIZE, DISCOUNT_FACTOR, LEARNING_RATE)
+
+            # Draw the game
+            WINDOW.fill(WHITE)
+            dino.draw(WINDOW)
+            for obstacle in obstacles:
+                obstacle.draw(WINDOW)
+            draw_score(score, episode, epsilon, time.time() - start_time)
             pygame.display.update()
-            time.sleep(1)
-        
-        # Update the display
-        pygame.display.flip()
+
+            # Check if the game is over
+            if done:
+                print("Episode:", episode, "Score:", score, "Time:", time.time() - start_time, "Memory Size:", len(memory))
+                break
+
+            draw_window(dino, obstacles, score, episode, epsilon, time.time() - start_time)
 
 
 
-run_game()      
+
+
+
+# Draw the game window
+def draw_window(dino, obstacles, score, episode, epsilon, time):
+    WINDOW.fill(WHITE)
+    dino.draw(WINDOW)
+    for obstacle in obstacles:
+        obstacle.draw(WINDOW)
+    draw_score(score, episode, epsilon, time)
+    pygame.display.update()
+
+# Create the Q-learning model
+model = Sequential()
+model.add(Dense(64, input_shape=(STATE_SIZE,), activation="relu"))
+model.add(Dense(64, activation="relu"))
+model.add(Dense(NUM_ACTIONS, activation="linear"))
+model.compile(loss="mse", optimizer=Adam(lr=LEARNING_RATE))
+
+# Run the game
+run_game(model)
+
+# Quit the game
+pygame.quit()
+sys.exit()
