@@ -1,3 +1,3 @@
 # Dino
-Chrome Dino replica game, but with Machine Learning!
-TensorFlow, Q-Learning, SARSA, PyTorch. I listed all of them because I couldn't get any of them working.
+Chrome Dino replica game, but with Machine Learning! <br />
+I tried using Deep NN TensorFlow, Basic Q-Learning, Basic SARSA, Deep NN PyTorch and have given up working on it at the moment!
